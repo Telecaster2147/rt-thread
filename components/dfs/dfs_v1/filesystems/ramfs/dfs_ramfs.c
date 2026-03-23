@@ -59,6 +59,29 @@ int dfs_ramfs_ioctl(struct dfs_file *file, int cmd, void *args)
     return -EIO;
 }
 
+
+static int _ramfs_set_name(char *name, rt_size_t name_size, const char *path)
+{
+    const char *name_ptr = path;
+    rt_size_t name_len;
+
+    while (*name_ptr == '/' && *name_ptr)
+    {
+        name_ptr ++;
+    }
+
+    name_len = rt_strlen(name_ptr);
+    if (name_len >= name_size)
+    {
+        return -ENAMETOOLONG;
+    }
+
+    rt_memcpy(name, name_ptr, name_len);
+    name[name_len] = '\0';
+
+    return RT_EOK;
+}
+
 struct ramfs_dirent *dfs_ramfs_lookup(struct dfs_ramfs *ramfs,
                                       const char       *path,
                                       rt_size_t        *size)
@@ -245,11 +268,11 @@ int dfs_ramfs_open(struct dfs_file *file)
 
                 /* remove '/' separator */
                 name_ptr = file->vnode->path;
-                while (*name_ptr == '/' && *name_ptr)
+                if (_ramfs_set_name(dirent->name, sizeof(dirent->name), name_ptr) != RT_EOK)
                 {
-                    name_ptr++;
+                    rt_memheap_free(dirent);
+                    return -ENAMETOOLONG;
                 }
-                strncpy(dirent->name, name_ptr, RAMFS_NAME_MAX);
 
                 rt_list_init(&(dirent->list));
                 dirent->data = NULL;
@@ -402,7 +425,10 @@ int dfs_ramfs_rename(struct dfs_filesystem *fs,
     if (dirent == NULL)
         return -ENOENT;
 
-    strncpy(dirent->name, newpath, RAMFS_NAME_MAX);
+    if (_ramfs_set_name(dirent->name, sizeof(dirent->name), newpath) != RT_EOK)
+    {
+        return -ENAMETOOLONG;
+    }
 
     return RT_EOK;
 }
